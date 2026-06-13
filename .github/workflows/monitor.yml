@@ -46,7 +46,7 @@ jobs:
           GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
           PHONE_CARRIER_EMAIL: ${{ secrets.PHONE_CARRIER_EMAIL }}
         run: |
-          end_time=$(($(date +%s) + 270))
+          end_time=$(($(date +%s) + 200))
           while [ $(date +%s) -lt $end_time ]; do
             python ticket_monitor.py
             sleep 60
