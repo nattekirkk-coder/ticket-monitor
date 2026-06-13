@@ -41,42 +41,55 @@ EVENT_URL  = ("https://www.ticketmaster.com/noah-kahan-the-great-divide-tour-"
 # ─── Method 1: Ticketmaster Discovery API ─────────────────────────────────────
 
 def check_via_api() -> tuple[bool, str]:
-    """
-    Uses the free Ticketmaster Discovery API to check event status.
-    Reliable for primary on-sale events. May also surface resale pricing.
-    Returns (tickets_available, detail_string)
-    """
     if not TM_API_KEY:
-        print("[API] No TM_API_KEY set — skipping API check.")
+        print("[API] No TM_API_KEY set — skipping.")
         return False, "no_key"
 
-    url = f"https://app.ticketmaster.com/discovery/v2/events/{EVENT_ID}.json"
+    # Search by keyword + date (more reliable than direct event ID lookup)
+    url = "https://app.ticketmaster.com/discovery/v2/events.json"
+    params = {
+        "apikey":        TM_API_KEY,
+        "keyword":       "Noah Kahan",
+        "city":          "Philadelphia",
+        "stateCode":     "PA",
+        "startDateTime": "2026-06-26T00:00:00Z",
+        "endDateTime":   "2026-06-27T00:00:00Z",
+        "size":          5,
+    }
     try:
-        r = requests.get(url, params={"apikey": TM_API_KEY}, timeout=15)
+        r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
         data = r.json()
 
-        # Status code: "onsale", "offsale", "cancelled", "rescheduled", etc.
-        status = data.get("dates", {}).get("status", {}).get("code", "unknown")
+        events = data.get("_embedded", {}).get("events", [])
+        if not events:
+            print("[API] No events found in search — no tickets available.")
+            return False, "no_events_found"
 
-        # priceRanges appear when tickets (including resale) are listed with prices
-        prices = data.get("priceRanges", [])
-        price_str = ""
-        if prices:
-            lo = prices[0].get("min", "?")
-            hi = prices[0].get("max", "?")
-            price_str = f"${lo}–${hi}"
+        for event in events:
+            name = event.get("name", "")
+            if "noah kahan" in name.lower() or "great divide" in name.lower():
+                status = event.get("dates", {}).get("status", {}).get("code", "unknown")
+                prices = event.get("priceRanges", [])
 
-        detail = f"status={status}" + (f" | prices={price_str}" if price_str else "")
-        print(f"[API] {detail}")
+                price_str = ""
+                if prices:
+                    lo = prices[0].get("min", "?")
+                    hi = prices[0].get("max", "?")
+                    price_str = f"${lo}–${hi}"
 
-        available = (status == "onsale") or (len(prices) > 0)
-        return available, detail
+                detail = f"status={status}" + (f" | prices={price_str}" if price_str else "")
+                print(f"[API] {name} | {detail}")
+
+                available = (status == "onsale") or (len(prices) > 0)
+                return available, detail
+
+        print(f"[API] Event not matched in {len(events)} result(s).")
+        return False, "not_matched"
 
     except Exception as e:
         print(f"[API Error] {e}")
         return False, f"error: {e}"
-
 
 # ─── Method 2: Ticketmaster Page Scrape ───────────────────────────────────────
 
