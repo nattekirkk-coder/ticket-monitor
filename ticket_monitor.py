@@ -117,7 +117,7 @@ def check_event(event: dict) -> tuple[bool, str]:
                 # so checking len(prices) > 0 causes constant false positives.
                 # The real signal is the status flipping back to "onsale" when
                 # resale tickets become available.
-                available = (status == "onsale")
+                available = (status == "onsale") and (len(prices) > 0)
                 # ─────────────────────────────────────────────────────────────
 
                 detail = f"status={status} | price_ranges={len(prices)}"
