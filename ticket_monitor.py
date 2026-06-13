@@ -90,7 +90,7 @@ def check_via_api() -> tuple[bool, str]:
     except Exception as e:
         print(f"[API Error] {e}")
         return False, f"error: {e}"
-
+      
 # ─── Method 2: Ticketmaster Page Scrape ───────────────────────────────────────
 
 def check_via_page() -> tuple[bool, str]:
