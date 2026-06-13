@@ -49,8 +49,6 @@ EVENTS = [
      {
          "label":      "New York · July 18",
          "keyword":    "Noah Kahan",
-         "city":       "New York",
-         "state":      "NY",
          "date_start": "2026-07-18T00:00:00Z",
          "date_end":   "2026-07-19T23:59:59Z",
          "url":        "https://www.ticketmaster.com/noah-kahan-the-great-divide-tour-queens-new-york-07-18-2026/event/1D00644195271C17",
@@ -59,8 +57,6 @@ EVENTS = [
      {
          "label":      "New York · July 19",
          "keyword":    "Noah Kahan",
-         "city":       "New York",
-         "state":      "NY",
          "date_start": "2026-07-19T00:00:00Z",
          "date_end":   "2026-07-20T23:59:59Z",
          "url":        "https://www.ticketmaster.com/noah-kahan-the-great-divide-tour-queens-new-york-07-19-2026/event/1D006446F9AB7790",
@@ -88,15 +84,18 @@ def check_event(event: dict) -> tuple[bool, str]:
     try:
         r = requests.get(
             "https://app.ticketmaster.com/discovery/v2/events.json",
-            params={
-                "apikey":        TM_API_KEY,
-                "keyword":       event["keyword"],
-                "city":          event["city"],
-                "stateCode":     event["state"],
-                "startDateTime": event["date_start"],
-                "endDateTime":   event["date_end"],
-                "size":          5,
-            },
+            params = {
+    "apikey":        TM_API_KEY,
+    "keyword":       event["keyword"],
+    "startDateTime": event["date_start"],
+    "endDateTime":   event["date_end"],
+    "size":          5,
+}
+# Only add location filters if the event specifies them
+if event.get("city"):
+    params["city"] = event["city"]
+if event.get("state"):
+    params["stateCode"] = event["state"]
             timeout=15,
         )
         r.raise_for_status()
