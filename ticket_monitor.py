@@ -1,28 +1,16 @@
 #!/usr/bin/env python3
 """
-╔══════════════════════════════════════════════════════════════╗
-║           Noah Kahan Ticket Monitor — ticket_monitor.py      ║
-║  Checks every 5 min for resale tickets via Ticketmaster API  ║
-║  and page scraping. Alerts via Discord and/or SMS (free).    ║
-╚══════════════════════════════════════════════════════════════╝
-
-Environment variables to set (via GitHub Secrets):
-  TM_API_KEY          — Ticketmaster Developer API key (required)
-  DISCORD_WEBHOOK_URL — Discord webhook URL (recommended)
-  GMAIL_USER          — Your Gmail address (optional, for SMS)
-  GMAIL_APP_PASSWORD  — Gmail App Password (optional, for SMS)
-  PHONE_CARRIER_EMAIL — e.g., 2155551234@vtext.com (optional, for SMS)
+Ticketmaster Ticket Monitor — multi-show edition
+Monitors multiple shows simultaneously and alerts via Discord / SMS.
 """
 
 import os
-import re
-import json
 import smtplib
 import requests
 from email.mime.text import MIMEText
 from datetime import datetime, timezone
 
-# ─── Configuration ────────────────────────────────────────────────────────────
+# ─── Credentials (set these as GitHub Secrets) ────────────────────────────────
 
 TM_API_KEY          = os.environ.get("TM_API_KEY", "")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
@@ -30,208 +18,167 @@ GMAIL_USER          = os.environ.get("GMAIL_USER", "")
 GMAIL_APP_PASSWORD  = os.environ.get("GMAIL_APP_PASSWORD", "")
 PHONE_CARRIER_EMAIL = os.environ.get("PHONE_CARRIER_EMAIL", "")
 
-# ─── Event Details ────────────────────────────────────────────────────────────
+# ─── Shows to Monitor ─────────────────────────────────────────────────────────
+#
+#  To add a show, copy one of the blocks below, uncomment it, and fill in:
+#    label      → friendly name shown in your alert
+#    keyword    → artist name to search for
+#    city       → city name exactly as on Ticketmaster
+#    state      → 2-letter state code
+#    date_start → show date at midnight UTC  (YYYY-MM-DDT00:00:00Z)
+#    date_end   → show date end of day UTC   (YYYY-MM-DDT23:59:59Z)
+#    url        → paste the full Ticketmaster URL for that show
+#
+#  To find a NYC show URL: go to ticketmaster.com, search "Noah Kahan",
+#  click the show you want, and copy the URL from your browser address bar.
 
-EVENT_ID   = "0200644110F3DABB"
-EVENT_NAME = "Noah Kahan — The Great Divide Tour"
-EVENT_INFO = "Philadelphia, PA · June 26, 2026"
-EVENT_URL  = ("https://www.ticketmaster.com/noah-kahan-the-great-divide-tour-"
-              "philadelphia-pennsylvania-06-26-2026/event/0200644110F3DABB")
+EVENTS = [
+    {
+        "label":      "Philadelphia · June 26",
+        "keyword":    "Noah Kahan",
+        "city":       "Philadelphia",
+        "state":      "PA",
+        "date_start": "2026-06-26T00:00:00Z",
+        "date_end":   "2026-06-27T00:00:00Z",
+        "url":        "https://www.ticketmaster.com/noah-kahan-the-great-divide-tour-"
+                      "philadelphia-pennsylvania-06-26-2026/event/0200644110F3DABB",
+    },
 
-# ─── Method 1: Ticketmaster Discovery API ─────────────────────────────────────
+    # ── Paste additional shows below this line ────────────────────────────────
 
-def check_via_api() -> tuple[bool, str]:
+     {
+         "label":      "New York · July 18",
+         "keyword":    "Noah Kahan",
+         "city":       "New York",
+         "state":      "NY",
+         "date_start": "2026-07-18T00:00:00Z",
+         "date_end":   "2026-07-19T23:59:59Z",
+         "url":        "https://www.ticketmaster.com/noah-kahan-the-great-divide-tour-queens-new-york-07-18-2026/event/1D00644195271C17",
+     },
+
+     {
+         "label":      "New York · July 19",
+         "keyword":    "Noah Kahan",
+         "city":       "New York",
+         "state":      "NY",
+         "date_start": "2026-07-19T00:00:00Z",
+         "date_end":   "2026-07-20T23:59:59Z",
+         "url":        "https://www.ticketmaster.com/noah-kahan-the-great-divide-tour-queens-new-york-07-19-2026/event/1D006446F9AB7790",
+     },
+
+   {
+         "label":      "Washington · July 22",
+         "keyword":    "Noah Kahan",
+         "city":       "Washington",
+         "state":      "DC",
+         "date_start": "2026-07-22T00:00:00Z",
+         "date_end":   "2026-07-23T23:59:59Z",
+         "url":        "https://www.ticketmaster.com/noah-kahan-the-great-divide-tour-washington-district-of-columbia-07-22-2026/event/15006441D117A0B6",
+     },
+]
+
+# ─── Ticket Checking ──────────────────────────────────────────────────────────
+
+def check_event(event: dict) -> tuple[bool, str]:
+    """Check one show for ticket availability via the Ticketmaster Discovery API."""
     if not TM_API_KEY:
-        print("[API] No TM_API_KEY set — skipping.")
+        print("  [API] No TM_API_KEY set — add it as a GitHub Secret.")
         return False, "no_key"
 
-    # Search by keyword + date (more reliable than direct event ID lookup)
-    url = "https://app.ticketmaster.com/discovery/v2/events.json"
-    params = {
-        "apikey":        TM_API_KEY,
-        "keyword":       "Noah Kahan",
-        "city":          "Philadelphia",
-        "stateCode":     "PA",
-        "startDateTime": "2026-06-26T00:00:00Z",
-        "endDateTime":   "2026-06-27T00:00:00Z",
-        "size":          5,
-    }
     try:
-        r = requests.get(url, params=params, timeout=15)
+        r = requests.get(
+            "https://app.ticketmaster.com/discovery/v2/events.json",
+            params={
+                "apikey":        TM_API_KEY,
+                "keyword":       event["keyword"],
+                "city":          event["city"],
+                "stateCode":     event["state"],
+                "startDateTime": event["date_start"],
+                "endDateTime":   event["date_end"],
+                "size":          5,
+            },
+            timeout=15,
+        )
         r.raise_for_status()
-        data = r.json()
+        results = r.json().get("_embedded", {}).get("events", [])
 
-        events = data.get("_embedded", {}).get("events", [])
-        if not events:
-            print("[API] No events found in search — no tickets available.")
-            return False, "no_events_found"
+        if not results:
+            print("  [API] No events returned for this search.")
+            return False, "not_found"
 
-        for event in events:
-            name = event.get("name", "")
-            if "noah kahan" in name.lower() or "great divide" in name.lower():
-                status = event.get("dates", {}).get("status", {}).get("code", "unknown")
-                prices = event.get("priceRanges", [])
+        for e in results:
+            name = e.get("name", "")
+            if event["keyword"].lower() in name.lower():
+                status = e.get("dates", {}).get("status", {}).get("code", "unknown")
+                prices = e.get("priceRanges", [])
 
-                price_str = ""
-                if prices:
+                # ── THE FIX: only trigger on "onsale" ────────────────────────
+                # Ticketmaster keeps old price ranges even after a show sells out,
+                # so checking len(prices) > 0 causes constant false positives.
+                # The real signal is the status flipping back to "onsale" when
+                # resale tickets become available.
+                available = (status == "onsale")
+                # ─────────────────────────────────────────────────────────────
+
+                detail = f"status={status} | price_ranges={len(prices)}"
+                if available and prices:
                     lo = prices[0].get("min", "?")
                     hi = prices[0].get("max", "?")
-                    price_str = f"${lo}–${hi}"
+                    detail += f" | ${lo}–${hi}"
 
-                detail = f"status={status}" + (f" | prices={price_str}" if price_str else "")
-                print(f"[API] {name} | {detail}")
-
-                available = (status == "onsale")
+                print(f"  [API] {name} | {detail}")
                 return available, detail
 
-        print(f"[API] Event not matched in {len(events)} result(s).")
+        print(f"  [API] Keyword not matched in {len(results)} result(s).")
         return False, "not_matched"
 
-    except Exception as e:
-        print(f"[API Error] {e}")
-        return False, f"error: {e}"
-      
-# ─── Method 2: Ticketmaster Page Scrape ───────────────────────────────────────
-
-def check_via_page() -> tuple[bool, str]:
-    """
-    Fetches the Ticketmaster event page and looks for resale ticket indicators.
-    This catches resale tickets that may appear even when the API shows 'offsale'.
-    Returns (tickets_available, tag_string)
-    """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/125.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control":   "no-cache",
-        "Pragma":          "no-cache",
-    }
-    try:
-        r = requests.get(EVENT_URL, headers=headers, timeout=20)
-
-        # Cloudflare may block the request
-        if r.status_code in (403, 429):
-            print(f"[Page] Blocked ({r.status_code}) — relying on API check only.")
-            return False, "blocked"
-
-        text_lower = r.text.lower()
-
-        # Positive signals: ticket purchase is possible
-        buy_phrases = [
-            "get tickets", "buy tickets", "select tickets",
-            "find tickets", "add to cart",
-        ]
-        resale_phrases = ["resale", "fan-to-fan", "verified resale"]
-
-        has_buy    = any(p in text_lower for p in buy_phrases)
-        has_resale = any(p in text_lower for p in resale_phrases)
-
-        # Negative signals: definitely no tickets
-        unavail_phrases = [
-            "sold out",
-            "no tickets available",
-            "not currently available",
-            "tickets unavailable",
-        ]
-        is_unavailable = any(p in text_lower for p in unavail_phrases)
-
-        # Deep-check: parse the __NEXT_DATA__ embedded JSON (Next.js site)
-        nd_match = re.search(
-            r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>',
-            r.text, re.DOTALL
-        )
-        if nd_match:
-            try:
-                nd_lower = nd_match.group(1).lower()
-                if "resale" in nd_lower:
-                    has_resale = True
-                if "onsale" in nd_lower and not is_unavailable:
-                    has_buy = True
-            except Exception:
-                pass
-
-        available = (has_buy or has_resale) and not is_unavailable
-
-        if has_resale:
-            tag = "RESALE tickets detected"
-        elif has_buy:
-            tag = "buy button present"
-        else:
-            tag = "offsale/sold-out"
-
-        detail = f"tag={tag} | sold_out={is_unavailable}"
-        print(f"[Page] {detail}")
-        return available, tag
-
-    except Exception as e:
-        print(f"[Page Error] {e}")
-        return False, f"error: {e}"
+    except Exception as exc:
+        print(f"  [API Error] {exc}")
+        return False, f"error: {exc}"
 
 
 # ─── Alerting ─────────────────────────────────────────────────────────────────
 
-def send_discord(message: str):
-    """Send a rich embed alert to your Discord channel via webhook."""
+def send_discord(event: dict, detail: str):
     if not DISCORD_WEBHOOK_URL:
-        print("[Discord] No webhook URL set — skipping.")
         return
     try:
-        payload = {
-            "username": "🎫 Ticket Bot",
-            "embeds": [{
-                "title":       "🚨  TICKETS AVAILABLE — ACT NOW!",
-                "description": message,
-                "color":       0x00C853,   # green
-                "url":         EVENT_URL,
-                "footer":      {"text": "Click the title above to open Ticketmaster"},
-                "timestamp":   datetime.now(timezone.utc).isoformat(),
-            }]
-        }
-        resp = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
-        resp.raise_for_status()
-        print("[Discord] Alert sent ✓")
-    except Exception as e:
-        print(f"[Discord Error] {e}")
+        requests.post(
+            DISCORD_WEBHOOK_URL,
+            json={
+                "username": "🎫 Ticket Bot",
+                "embeds": [{
+                    "title":       "🚨  TICKETS AVAILABLE — ACT NOW!",
+                    "description": f"**Noah Kahan — The Great Divide Tour**\n"
+                                   f"{event['label']}\n\n{detail}",
+                    "color":       0x00C853,
+                    "url":         event["url"],
+                    "footer":      {"text": "Click the title to open Ticketmaster"},
+                    "timestamp":   datetime.now(timezone.utc).isoformat(),
+                }],
+            },
+            timeout=10,
+        ).raise_for_status()
+        print("  [Discord] Alert sent ✓")
+    except Exception as exc:
+        print(f"  [Discord Error] {exc}")
 
 
-def send_sms(message: str):
-    """
-    Send an SMS by emailing your carrier's email-to-SMS gateway via Gmail.
-    Requires GMAIL_USER, GMAIL_APP_PASSWORD, and PHONE_CARRIER_EMAIL to be set.
-
-    Common carrier gateways (replace 10digitnumber with your number):
-      Verizon  → 10digitnumber@vtext.com
-      AT&T     → 10digitnumber@txt.att.net
-      T-Mobile → 10digitnumber@tmomail.net
-      Cricket  → 10digitnumber@mms.cricketwireless.net
-      Boost    → 10digitnumber@sms.myboostmobile.com
-    """
+def send_sms(event: dict, detail: str):
     if not (GMAIL_USER and GMAIL_APP_PASSWORD and PHONE_CARRIER_EMAIL):
-        print("[SMS] Missing credentials — skipping SMS.")
         return
     try:
-        body = f"{message}\n\nBuy here:\n{EVENT_URL}"
+        body  = f"TICKET ALERT\nNoah Kahan — {event['label']}\n{detail}\n\n{event['url']}"
         email = MIMEText(body)
         email["Subject"] = "TICKET ALERT"
         email["From"]    = GMAIL_USER
         email["To"]      = PHONE_CARRIER_EMAIL
-
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-            server.sendmail(GMAIL_USER, PHONE_CARRIER_EMAIL, email.as_string())
-        print("[SMS] Alert sent ✓")
-    except Exception as e:
-        print(f"[SMS Error] {e}")
-
-
-def fire_alerts(detail: str):
-    """Send all configured alerts."""
-    message = f"**{EVENT_NAME}**\n{EVENT_INFO}\n\n{detail}"
-    send_discord(message)
-    send_sms(f"{EVENT_NAME} | {EVENT_INFO} | {detail}")
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+            s.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            s.sendmail(GMAIL_USER, PHONE_CARRIER_EMAIL, email.as_string())
+        print("  [SMS] Alert sent ✓")
+    except Exception as exc:
+        print(f"  [SMS Error] {exc}")
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -240,34 +187,21 @@ def main():
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     print(f"\n{'='*56}")
     print(f"  Ticket check @ {now}")
-    print(f"  {EVENT_NAME}")
-    print(f"  {EVENT_INFO}")
+    print(f"  Monitoring {len(EVENTS)} show(s)")
     print(f"{'='*56}")
 
-    tickets_found = False
-    details       = []
+    for event in EVENTS:
+        print(f"\n▶  {event['label']}")
+        available, detail = check_event(event)
 
-    # --- Check 1: Discovery API ---
-    api_found, api_detail = check_via_api()
-    if api_found:
-        tickets_found = True
-        details.append(f"API → {api_detail}")
+        if available:
+            print("  🚨 TICKETS FOUND — firing alerts!")
+            send_discord(event, detail)
+            send_sms(event, detail)
+        else:
+            print(f"  ✅ No tickets yet.")
 
-    # --- Check 2: Page scrape (catches resale even when API says offsale) ---
-    page_found, page_detail = check_via_page()
-    if page_found:
-        tickets_found = True
-        details.append(f"Page → {page_detail}")
-
-    # --- Result ---
-    if tickets_found:
-        detail_str = "\n".join(details) if details else "Tickets detected"
-        print(f"\n🚨  TICKETS FOUND! Firing alerts...")
-        fire_alerts(detail_str)
-        print("\n⚠️  Once you've purchased your ticket, disable the GitHub Actions")
-        print("   workflow so you stop receiving alerts.")
-    else:
-        print(f"\n✅  No tickets yet. Workflow will check again in ~5 minutes.")
+    print(f"\n{'='*56}\n")
 
 
 if __name__ == "__main__":
