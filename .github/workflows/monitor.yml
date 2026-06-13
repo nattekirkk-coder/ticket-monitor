@@ -17,7 +17,7 @@ on:
 jobs:
   check-tickets:
     runs-on: ubuntu-latest
-    timeout-minutes: 4        # Kill the job if it hangs (keeps usage low)
+    timeout-minutes: 5        # Kill the job if it hangs (keeps usage low)
 
     steps:
       # 1. Pull your repo so the script is available
@@ -35,11 +35,16 @@ jobs:
         run: pip install --quiet requests
 
       # 4. Run the monitor — secrets are injected as environment variables
-      - name: Run ticket monitor
+      - name: Run ticket monitor (check every 30s for 4.5 min)
         env:
           TM_API_KEY:          ${{ secrets.TM_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           GMAIL_USER:          ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
           PHONE_CARRIER_EMAIL: ${{ secrets.PHONE_CARRIER_EMAIL }}
-        run: python ticket_monitor.py
+        run: |
+          end_time=$(($(date +%s) + 270))
+          while [ $(date +%s) -lt $end_time ]; do
+            python ticket_monitor.py
+            sleep 30
+          done
