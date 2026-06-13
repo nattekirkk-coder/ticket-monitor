@@ -14,6 +14,9 @@ on:
     - cron: "*/5 * * * *"   # Run every 5 minutes, 24/7
   workflow_dispatch:          # Also adds a "Run workflow" button for manual tests
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # ← add this
+  
 jobs:
   check-tickets:
     runs-on: ubuntu-latest
