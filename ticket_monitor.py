@@ -81,7 +81,7 @@ def check_via_api() -> tuple[bool, str]:
                 detail = f"status={status}" + (f" | prices={price_str}" if price_str else "")
                 print(f"[API] {name} | {detail}")
 
-                available = (status == "onsale") or (len(prices) > 0)
+                available = (status == "onsale")
                 return available, detail
 
         print(f"[API] Event not matched in {len(events)} result(s).")
