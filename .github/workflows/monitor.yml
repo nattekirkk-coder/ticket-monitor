@@ -49,5 +49,5 @@ jobs:
           end_time=$(($(date +%s) + 270))
           while [ $(date +%s) -lt $end_time ]; do
             python ticket_monitor.py
-            sleep 30
+            sleep 60
           done
