@@ -76,26 +76,26 @@ EVENTS = [
 # ─── Ticket Checking ──────────────────────────────────────────────────────────
 
 def check_event(event: dict) -> tuple[bool, str]:
-    """Check one show for ticket availability via the Ticketmaster Discovery API."""
     if not TM_API_KEY:
-        print("  [API] No TM_API_KEY set — add it as a GitHub Secret.")
+        print("  [API] No TM_API_KEY set.")
         return False, "no_key"
 
     try:
+        params = {
+            "apikey":        TM_API_KEY,
+            "keyword":       event["keyword"],
+            "startDateTime": event["date_start"],
+            "endDateTime":   event["date_end"],
+            "size":          5,
+        }
+        if event.get("city"):
+            params["city"] = event["city"]
+        if event.get("state"):
+            params["stateCode"] = event["state"]
+
         r = requests.get(
             "https://app.ticketmaster.com/discovery/v2/events.json",
-            params = {
-    "apikey":        TM_API_KEY,
-    "keyword":       event["keyword"],
-    "startDateTime": event["date_start"],
-    "endDateTime":   event["date_end"],
-    "size":          5,
-}
-# Only add location filters if the event specifies them
-if event.get("city"):
-    params["city"] = event["city"]
-if event.get("state"):
-    params["stateCode"] = event["state"]
+            params=params,
             timeout=15,
         )
         r.raise_for_status()
@@ -111,13 +111,7 @@ if event.get("state"):
                 status = e.get("dates", {}).get("status", {}).get("code", "unknown")
                 prices = e.get("priceRanges", [])
 
-                # ── THE FIX: only trigger on "onsale" ────────────────────────
-                # Ticketmaster keeps old price ranges even after a show sells out,
-                # so checking len(prices) > 0 causes constant false positives.
-                # The real signal is the status flipping back to "onsale" when
-                # resale tickets become available.
                 available = (status == "onsale") and (len(prices) > 0)
-                # ─────────────────────────────────────────────────────────────
 
                 detail = f"status={status} | price_ranges={len(prices)}"
                 if available and prices:
@@ -134,7 +128,6 @@ if event.get("state"):
     except Exception as exc:
         print(f"  [API Error] {exc}")
         return False, f"error: {exc}"
-
 
 # ─── Alerting ─────────────────────────────────────────────────────────────────
 
