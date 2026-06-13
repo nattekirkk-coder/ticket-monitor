@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# File location in your repo: .github/workflows/monitor.yml
+#
+# This GitHub Actions workflow runs ticket_monitor.py every 5 minutes and
+# alerts you via Discord / SMS whenever resale tickets appear on Ticketmaster.
+#
+# It is completely free on GitHub's free tier.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: 🎫 Ticket Monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # Run every 5 minutes, 24/7
+  workflow_dispatch:          # Also adds a "Run workflow" button for manual tests
+
+jobs:
+  check-tickets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4        # Kill the job if it hangs (keeps usage low)
+
+    steps:
+      # 1. Pull your repo so the script is available
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Install Python
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. Install the only dependency (requests)
+      - name: Install dependencies
+        run: pip install --quiet requests
+
+      # 4. Run the monitor — secrets are injected as environment variables
+      - name: Run ticket monitor
+        env:
+          TM_API_KEY:          ${{ secrets.TM_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GMAIL_USER:          ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
+          PHONE_CARRIER_EMAIL: ${{ secrets.PHONE_CARRIER_EMAIL }}
+        run: python ticket_monitor.py
