@@ -11,7 +11,7 @@ name: 🎫 Ticket Monitor
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # Run every 5 minutes, 24/7
+    - cron: "*/15 * * * *"   # Run every 5 minutes, 24/7
   workflow_dispatch:          # Also adds a "Run workflow" button for manual tests
 
 env:
@@ -20,7 +20,7 @@ env:
 jobs:
   check-tickets:
     runs-on: ubuntu-latest
-    timeout-minutes: 5        # Kill the job if it hangs (keeps usage low)
+    timeout-minutes: 15        # Kill the job if it hangs (keeps usage low)
 
     steps:
       # 1. Pull your repo so the script is available
@@ -46,8 +46,8 @@ jobs:
           GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
           PHONE_CARRIER_EMAIL: ${{ secrets.PHONE_CARRIER_EMAIL }}
         run: |
-          end_time=$(($(date +%s) + 200))
+          end_time=$(($(date +%s) + 800))
           while [ $(date +%s) -lt $end_time ]; do
             python ticket_monitor.py
-            sleep 60
+            sleep 90
           done
